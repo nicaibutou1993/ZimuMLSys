@@ -4,6 +4,7 @@ from tensorflow.keras.layers import Add
 from tensorflow.keras.models import Model
 from .snipets import combined_dnn_input
 
+
 """
 autoint模型：添加了 mutiheadselfattention 效果没有 FM DeepFM 好
 30ms/step - loss: 0.0462 - accuracy: 0.9835 - val_loss: 0.3911 - val_accuracy: 0.8885
