@@ -4,7 +4,8 @@ import tensorflow.keras.backend as K
 from collections import OrderedDict
 import copy
 from tensorflow.keras.initializers import GlorotUniform, Zeros
-from .layer import SequencePoolingLayer
+from zimu_ml_sys.models.layer import SequencePoolingLayer
+from zimu_ml_sys.models.layer import Hash
 
 
 class SparseFeat:
@@ -15,7 +16,8 @@ class SparseFeat:
     def __init__(self, name, vocabulary_size, embedding_dim=4, dtype="int32",
                  embedding_name=None,
                  embeddings_initializer=None,
-                 is_hist_mean_pooling=True
+                 is_hist_mean_pooling=True,
+                 use_hash=False
                  ):
         self.name = name
         self.vocabulary_size = vocabulary_size
@@ -32,6 +34,8 @@ class SparseFeat:
         self.embeddings_initializer = embeddings_initializer
 
         self.is_hist_mean_pooling = is_hist_mean_pooling
+
+        self.use_hash = use_hash
 
 
 class DenseFeat:
@@ -83,12 +87,16 @@ class VarLenSparseFeat:
     def embeddings_initializer(self):
         return self.sparsefeat.embeddings_initializer
 
+    @property
+    def use_hash(self):
+        return self.sparsefeat.use_hash
+
 
 def build_input_layers(feature_columns):
     """
     创建 模型输入
-    :param feature_columns:
-    :return:
+    :param feature_columns: 字段
+    :return: 输入层 input_x
     """
     features_input_layers = OrderedDict()
 
@@ -118,10 +126,13 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
             1. 类别变量
             2. 序列类别变量： 这里针对序列类别变量 使用了 mean 取平均方式
             3. 序列类别变量 与 类别变量 共用 Embedding
-    :param input_layers:
-    :param feature_columns:
-    :param mask_zero:
-    :return:
+            4. 提供 针对输入是字符串类别变量，进行Hash 分桶 （可选）
+    :param input_layers: 输入层
+    :param feature_columns:  字段
+    :param mask_zero: 针对 Hash 或者 mean pooling 操作， 针对输入是0 相当于是 padding 部分
+    :param is_concat: 是否将所有的Embedding 全部进行 concat 操作
+    :param prefix: 针对多次使用相同 field Embedding 使用 prefix 加以区分，否则会因为 层的名称相同 导致创建模型识别
+    :return: embedding dict 和 dense dict 可能是 dict 也可能是 tensor
     """
     embedding_layers = OrderedDict()
 
@@ -160,14 +171,30 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
 
     for name, feature_column in sparse_feature_columns.items():
         embedding_layer = embedding_layers[name]
-        sparse_embedding_outputs_dict[name] = embedding_layer(input_layers[name])
 
+        input_idx = input_layers[name]
+        use_hash = feature_column.use_hash
+        if use_hash:
+            input_idx = Hash(feature_column.vocabulary_size)(input_idx)
+
+        sparse_embedding_outputs_dict[name] = embedding_layer(input_idx)
+
+    '''针对 序列变量 进行 Embedding，针对输入是 字符串。
+        1. hash 分桶（可选），
+        2. 针对序列 进行平均池化 （可选）
+        '''
     for name, feature_column in var_feature_columns.items():
         embedding_name = feature_column.embedding_name
 
         embedding_layer = embedding_layers[embedding_name]
 
-        embedding_output = embedding_layer(input_layers[name])
+        input_idx = input_layers[name]
+
+        use_hash = feature_column.use_hash
+        if use_hash:
+            input_idx = Hash(feature_column.vocabulary_size)(input_idx)
+
+        embedding_output = embedding_layer(input_idx)
 
         if feature_column.is_hist_mean_pooling:
             pooling_output = SequencePoolingLayer(mode='mean')(embedding_output)
@@ -176,13 +203,8 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
 
         var_embedding_outputs_dict[name] = pooling_output
 
-    # sparse_embedding_outputs_dict.extend(var_embedding_outputs_dict)
-
     sparse_embedding_outputs_dict.update(var_embedding_outputs_dict)
 
-    # concat_embedding_outputs = Concatenate(axis=1)(sparse_embedding_outputs_dict)
-
-    # concat_embedding_outputs = Lambda(lambda x: K.concatenate(x, axis=1))(sparse_embedding_outputs_dict)
     if is_concat:
         embedding_outputs_list = list(sparse_embedding_outputs_dict.values())
         embedding_outputs = Lambda(lambda x: K.concatenate(x, axis=1))(embedding_outputs_list)

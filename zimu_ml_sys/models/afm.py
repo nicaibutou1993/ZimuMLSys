@@ -1,6 +1,6 @@
 
-from .feature_column import *
-from .layer import AFMLayer
+from zimu_ml_sys.models.feature_column import *
+from zimu_ml_sys.models.layer import AFMLayer
 from tensorflow.keras.layers import Add
 from tensorflow.keras.models import Model
 

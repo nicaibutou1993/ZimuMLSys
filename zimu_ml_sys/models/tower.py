@@ -1,7 +1,7 @@
-from .feature_column import *
+from zimu_ml_sys.models.feature_column import *
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Model
-from .layer import DNNLayer
+from zimu_ml_sys.models.layer import DNNLayer
 
 '''
 双塔模型：

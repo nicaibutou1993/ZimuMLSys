@@ -1,8 +1,8 @@
-from .feature_column import *
-from .layer import DNNLayer
+from zimu_ml_sys.models.feature_column import *
+from zimu_ml_sys.models.layer import DNNLayer
 from tensorflow.keras.layers import Add
 from tensorflow.keras.models import Model
-from .snipets import combined_dnn_input
+from zimu_ml_sys.models.snipets import combined_dnn_input
 
 """
 wide & deep

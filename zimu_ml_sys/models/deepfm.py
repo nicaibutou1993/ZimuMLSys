@@ -1,8 +1,8 @@
-from .feature_column import *
-from .layer import FMLayer, DNNLayer
+from zimu_ml_sys.models.feature_column import *
+from zimu_ml_sys.models.layer import FMLayer, DNNLayer
 from tensorflow.keras.layers import Add
 from tensorflow.keras.models import Model
-from .snipets import combined_dnn_input
+from zimu_ml_sys.models.snipets import combined_dnn_input
 
 
 def DeepFM(feature_columns, hidden_units=(128, 128,), activation='relu', output_activation=''):

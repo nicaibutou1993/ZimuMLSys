@@ -1,5 +1,5 @@
-from .feature_column import *
-from .layer import AttentionSequencePoolingLayer, DNNLayer
+from zimu_ml_sys.models.feature_column import *
+from zimu_ml_sys.models.layer import AttentionSequencePoolingLayer, DNNLayer
 from tensorflow.keras.layers import Add
 from tensorflow.keras.models import Model
 

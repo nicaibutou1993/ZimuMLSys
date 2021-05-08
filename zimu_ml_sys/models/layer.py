@@ -1,9 +1,10 @@
+import pandas as pd
 from tensorflow.keras.layers import *
 import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.initializers import glorot_normal, Zeros
 import itertools
-from .snipets import sequence_masking
+from zimu_ml_sys.models.snipets import sequence_masking
 
 
 class FMLayer(Layer):
@@ -362,16 +363,63 @@ class SequencePoolingLayer(Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+class Hash(tf.keras.layers.Layer):
+    """
+    hash the input to [0,num_buckets)
+    if mask_zero = True,0 or 0.0 will be set to 0,other value will be set in range[1,num_buckets)
+    """
+
+    def __init__(self, num_buckets, mask_zero=False, **kwargs):
+        self.num_buckets = num_buckets
+        self.mask_zero = mask_zero
+        super(Hash, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        # Be sure to call this somewhere!
+        super(Hash, self).build(input_shape)
+
+    def call(self, x, mask=None, **kwargs):
+
+        if x.dtype != tf.string:
+            zero = tf.as_string(tf.zeros([1], dtype=x.dtype))
+            x = tf.as_string(x, )
+        else:
+            zero = tf.as_string(tf.zeros([1], dtype='int32'))
+
+        num_buckets = self.num_buckets if not self.mask_zero else self.num_buckets - 1
+        try:
+            hash_x = tf.string_to_hash_bucket_fast(x, num_buckets,
+                                                   name=None)  # weak hash
+        except:
+
+            hash_x = tf.strings.to_hash_bucket(x, num_buckets,
+                                                    name=None)  # weak hash
+        if self.mask_zero:
+            mask = tf.cast(tf.not_equal(x, zero), dtype='int64')
+            hash_x = (hash_x + 1) * mask
+
+        return hash_x
+
+    def get_config(self, ):
+        config = {'num_buckets': self.num_buckets, 'mask_zero': self.mask_zero, }
+        base_config = super(Hash, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
 if __name__ == '__main__':
-    k = tf.constant([[1, 2, 3, 0, 0, 0], [0, 0, 0, 0, 0, 0]])
-    q = tf.constant([[2], [3]])
+
+    csv = pd.read_csv('E:\data/avazu/mini_train.csv')
+
+    values = list(set(csv['device_id'].values))
+
+    num = 10000
+    k = tf.constant([values])
+
+    hash_value = Hash(20000, mask_zero=False)(k)
+    data = pd.DataFrame(list(hash_value.numpy()[0])).value_counts()
+
+
+    print(data)
+    print(len(values),len(data))
+
     # x = Input(shape=(6,), dtype='int32')
-    k = Embedding(input_dim=4, output_dim=10, mask_zero=True)(k)
-
-    q = Embedding(input_dim=4, output_dim=10, mask_zero=True)(q)
-
-    output = AttentionSequencePoolingLayer()([q, k])
-
-    # x = SequencePoolingLayer()(x)
-
-    print(output)
