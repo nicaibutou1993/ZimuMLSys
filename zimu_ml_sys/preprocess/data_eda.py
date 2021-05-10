@@ -41,9 +41,8 @@ class DataEDA(object):
 
     def fields_count_distribution(self, fields=None, is_print_count_value=True):
         """
-        图表展示 每一个字段 分布情况
-        :param self.data_frame:
-        :param field:
+        图表展示 每一个字段 count分布情况
+        :param field: 默认None,所有的字段都会统计，支持 list，str
         :return:
         """
 
@@ -73,7 +72,7 @@ class DataEDA(object):
 
     def fields_count_with_label_distribution(self, label_field, fields=None):
         """
-        图表展示 每一个字段 与 label 字段 分布情况
+        图表展示 每一个字段 与 label 字段 count分布情况
         :param self.data_frame:
         :param label_field:
         :param fields:
