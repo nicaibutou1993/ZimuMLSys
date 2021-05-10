@@ -7,6 +7,9 @@ from sklearn.preprocessing import LabelEncoder
 import copy
 
 
+
+
+
 class DataEDA(object):
     """
         数据分析：
