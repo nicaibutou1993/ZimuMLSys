@@ -3,7 +3,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.preprocessing import Binarizer
 import os
 import pickle
-from zimu_ml_sys.base_config import BaseConfig
+from zimu_ml_sys.constant import *
 
 
 class FeaturePreProcess(object):
@@ -14,10 +14,9 @@ class FeaturePreProcess(object):
     """
     DEFAULT_SAMPLING_NUM = 10000
 
-    def __init__(self, data_frame, base_config=BaseConfig()):
+    def __init__(self, data_frame):
 
         self.data_frame = data_frame
-        self.base_config = base_config
 
     def sampling_by_label(self, label_field=None, sampling_rate=None):
         """
@@ -92,7 +91,7 @@ class FeaturePreProcess(object):
         if isinstance(feature_fields, str):
             feature_fields = [feature_fields]
 
-        parent_path = self.base_config.ENCODING_DATA_PATH + task_name
+        parent_path = os.path.join(ENCODING_DATA_PATH, task_name)
         if not os.path.exists(parent_path):
             os.makedirs(parent_path)
 

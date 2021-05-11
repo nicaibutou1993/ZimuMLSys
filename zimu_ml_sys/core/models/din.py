@@ -1,7 +1,7 @@
-from zimu_ml_sys.models.feature_column import *
-from zimu_ml_sys.models.layer import AttentionSequencePoolingLayer, DNNLayer
-from tensorflow.keras.layers import Add
+from zimu_ml_sys.core.layers import AttentionSequencePoolingLayer, DNNLayer
 from tensorflow.keras.models import Model
+from zimu_ml_sys.core.feature_columns import *
+from tensorflow.keras.layers import *
 
 
 def seq_attention_pooling_output(feature_columns, embedding_outputs_dict, att_hidden_units, is_gru):

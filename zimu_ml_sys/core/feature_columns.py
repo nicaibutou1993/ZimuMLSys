@@ -4,8 +4,8 @@ import tensorflow.keras.backend as K
 from collections import OrderedDict
 import copy
 from tensorflow.keras.initializers import GlorotUniform, Zeros
-from zimu_ml_sys.models.layer import SequencePoolingLayer
-from zimu_ml_sys.models.layer import Hash
+from zimu_ml_sys.core.layers import SequencePoolingLayer
+from zimu_ml_sys.core.layers import Hash
 
 
 class SparseFeat:
@@ -13,7 +13,7 @@ class SparseFeat:
     针对类别特征
     """
 
-    def __init__(self, name, vocabulary_size, embedding_dim=4, dtype="int32",
+    def __init__(self, name, vocabulary_size, embedding_dim=4, dtype="int64",
                  embedding_name=None,
                  embeddings_initializer=None,
                  is_hist_mean_pooling=True,

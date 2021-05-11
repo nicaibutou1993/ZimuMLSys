@@ -1,8 +1,8 @@
-from zimu_ml_sys.models.feature_column import *
-from zimu_ml_sys.models.layer import MutiHeadSelfAttention, DNNLayer
-from tensorflow.keras.layers import Add
+from zimu_ml_sys.core.layers import MutiHeadSelfAttention, DNNLayer
 from tensorflow.keras.models import Model
-from zimu_ml_sys.models.snipets import combined_dnn_input
+from zimu_ml_sys.core.snipets import combined_dnn_input
+from zimu_ml_sys.core.feature_columns import *
+from tensorflow.keras.layers import *
 
 """
 autoint模型：添加了 mutiheadselfattention 效果没有 FM DeepFM 好
@@ -10,11 +10,12 @@ autoint模型：添加了 mutiheadselfattention 效果没有 FM DeepFM 好
 Total params: 4,907,990
 """
 
+
 def AutoInt(feature_columns, hidden_units=(128, 128),
             activation='relu', output_activation='', att_layer_num=3,
             att_embedding_size=16, head_num=2, use_res=True):
     """
-    AutoInt 模型
+    AutoInt 模型  muti_head_self_attention
     """
     feature_input_layers = build_input_layers(feature_columns)
 

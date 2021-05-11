@@ -1,16 +1,8 @@
-from zimu_ml_sys.models.feature_column import *
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Model
-from zimu_ml_sys.models.layer import DNNLayer
-
-'''
-双塔模型：
-    最终向量训练：
-    必须要进行归一化处理：1,2 选择一个
-        1. 那么在训练最后 进行sigmoid 处理训练
-        2. 在向量output，进行 归一化处理，l2_normalize   即 对应元素 除以 根号下 所有元素平方和 
-
-'''
+from zimu_ml_sys.core.feature_columns import *
+from zimu_ml_sys.core.layers import DNNLayer
+from tensorflow.keras.layers import *
 
 
 def get_tower_output(dense_outputs_dict, embedding_outputs_dict, columns, dnn_hidden_units):
@@ -29,7 +21,7 @@ def get_tower_output(dense_outputs_dict, embedding_outputs_dict, columns, dnn_hi
                      feature_column.name in dense_outputs_dict]
     embedding_outputs = [embedding_outputs_dict[feature_column.name] for feature_column in columns if
                          feature_column.name in embedding_outputs_dict]
-    embedding_output = Lambda(lambda x: K.squeeze(K.concatenate(x, axis=-1),1))(embedding_outputs)
+    embedding_output = Lambda(lambda x: K.squeeze(K.concatenate(x, axis=-1), 1))(embedding_outputs)
     concat_output = Lambda(lambda x: K.concatenate(x, axis=-1))(list(dense_outputs) + list([embedding_output]))
 
     x = concat_output
@@ -45,7 +37,14 @@ def get_tower_output(dense_outputs_dict, embedding_outputs_dict, columns, dnn_hi
 
 
 def Tower(user_columns, item_columns, dnn_hidden_units=(128,)):
-    """构建双塔模型"""
+    '''
+    双塔模型：
+        最终向量训练：
+        必须要进行归一化处理：1,2 选择一个
+            1. 那么在训练最后 进行sigmoid 处理训练
+            2. 在向量output，进行 归一化处理，l2_normalize   即 对应元素 除以 根号下 所有元素平方和
+
+    '''
     feature_columns = list(user_columns) + list(item_columns)
 
     input_layers_dict = build_input_layers(feature_columns)

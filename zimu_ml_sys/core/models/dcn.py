@@ -1,16 +1,19 @@
-from zimu_ml_sys.models.feature_column import *
-from zimu_ml_sys.models.layer import DNNLayer, CrossLayer
-from tensorflow.keras.layers import Add
+from zimu_ml_sys.core.layers import DNNLayer, CrossLayer
 from tensorflow.keras.models import Model
-from zimu_ml_sys.models.snipets import combined_dnn_input
-
-"""
-deep & cross
-
-"""
+from zimu_ml_sys.core.snipets import combined_dnn_input
+from zimu_ml_sys.core.feature_columns import *
+from tensorflow.keras.layers import *
 
 
 def DCN(feature_columns, hidden_units=(128, 128), activation='relu', output_activation=''):
+    """
+        deep & cross
+    :param feature_columns:
+    :param hidden_units:
+    :param activation:
+    :param output_activation:
+    :return:
+    """
     feature_input_layers = build_input_layers(feature_columns)
 
     inputs_list = feature_input_layers.values()

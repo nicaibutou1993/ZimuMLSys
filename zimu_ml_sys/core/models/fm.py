@@ -1,15 +1,11 @@
-
-from zimu_ml_sys.models.feature_column import *
-from zimu_ml_sys.models.layer import AFMLayer
-from tensorflow.keras.layers import Add
+from zimu_ml_sys.core.layers import FMLayer
 from tensorflow.keras.models import Model
+from zimu_ml_sys.core.feature_columns import *
+from tensorflow.keras.layers import *
 
-
-def AFM(feature_columns):
-
-
+def FM(feature_columns):
     """
-    AFM 模型
+    FM 模型
     """
     feature_input_layers = build_input_layers(feature_columns)
 
@@ -19,9 +15,9 @@ def AFM(feature_columns):
 
     embedding_outputs, dense_outputs = build_embedding_outputs(feature_input_layers, feature_columns)
 
-    afm_logit = AFMLayer()(embedding_outputs)
+    fm_logit = FMLayer()(embedding_outputs)
 
-    logit = Add()([linear_logit, afm_logit])
+    logit = Add()([linear_logit, fm_logit])
 
     output = Dense(1, activation='sigmoid')(logit)
 

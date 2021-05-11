@@ -4,7 +4,7 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.initializers import glorot_normal, Zeros
 import itertools
-from zimu_ml_sys.models.snipets import sequence_masking
+from zimu_ml_sys.core.snipets import sequence_masking
 
 
 class FMLayer(Layer):
