@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 """
 使用faiss IndexFlatIP: 使用基于内积 方式进行搜索
 """
