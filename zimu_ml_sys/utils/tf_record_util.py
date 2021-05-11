@@ -31,8 +31,8 @@ def get_tf_record_beans(feature_columns, label_name=None):
         dtype = tf.as_dtype(feature_column.dtype)
         if isinstance(feature_column, VarLenSparseFeat):
             beans.append(TFRecordBean(feature_column.name, [feature_column.maxlen], dtype=dtype))
-
-        beans.append(TFRecordBean(feature_column.name, dtype=dtype))
+        else:
+            beans.append(TFRecordBean(feature_column.name, dtype=dtype))
 
     if label_name:
         beans.append(TFRecordBean(label_name, is_label=True))
@@ -45,7 +45,6 @@ def tf_record_to_dataset(files_list,
                          batch_size=128,
                          is_shuffle=True,
                          epochs=None):
-
     """
     从tf-record 文件中读取，转换为 dataset 数据类型
     :param files_list: tf-record 文件集
@@ -63,7 +62,9 @@ def tf_record_to_dataset(files_list,
             fields_mapping = {}
 
             label_name = None
+
             for bean in tf_record_beans:
+
                 fields_mapping[bean.name] = tf.io.FixedLenFeature(bean.shape, bean.dtype)
                 if bean.is_label:
                     label_name = bean.name
