@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import requests
-from tasks.tianchi_news_rec.constant import TF_SERVING_USER_TOWER_URL, FAISS_ITEM_TOWER_URL,TASK_NAME
+from tasks.tianchi_news_rec.constant import TF_SERVING_USER_TOWER_URL, FAISS_ITEM_TOWER_URL, TASK_NAME
 from zimu_ml_sys.utils.data_util import read_encoding_mapping_data
 from tasks.tianchi_news_rec.offine.match.tower_task import TowerTask
 import numpy as np
@@ -14,7 +14,7 @@ class TowerService(object):
 
         self.item_tower_urls = FAISS_ITEM_TOWER_URL.split(',')
 
-        encoding_mapping = read_encoding_mapping_data(task_name=TASK_NAME,feature_fields=['user_id','article_id'])
+        encoding_mapping = read_encoding_mapping_data(task_name=TASK_NAME, feature_fields=['user_id', 'article_id'])
 
         self.id2user, _ = encoding_mapping.get('user_id')
 
@@ -48,7 +48,7 @@ class TowerService(object):
         """
         tower_task = TowerTask()
         columns = tower_task.get_feature_columns()
-        test_dataset = tower_task.get_dataset(columns,is_train=False)
+        test_dataset = tower_task.get_dataset(columns, is_train=False)
 
         datas = []
         for x, y in test_dataset:
@@ -76,5 +76,4 @@ class TowerService(object):
 
             data = [decoder_user_id]
             data.extend(decoder_item_ids)
-
             res.append(data)
