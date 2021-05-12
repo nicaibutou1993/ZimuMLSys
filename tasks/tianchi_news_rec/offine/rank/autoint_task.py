@@ -58,7 +58,6 @@ class AutoIntTask(object):
         :param is_train:
         :return:
         """
-
         tf_record_beans = get_tf_record_beans(feature_columns, label_name=self.label_name)
 
         if is_train:
