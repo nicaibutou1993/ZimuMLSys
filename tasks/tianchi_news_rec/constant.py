@@ -16,3 +16,9 @@ CTR_TF_RECORD_DATA_PATH = 'E:/data/tianchi_news_rec/tf_recored/'
 """双塔模型最后一层输出维度"""
 TOWER_OUTPUT_DIM = 128
 
+"""双塔模型 user 侧 tf-serving-url"""
+TF_SERVING_USER_TOWER_URL = 'http://zimu:8501/v1/models/user_tower:predict'
+
+"""双塔模型 item 侧 faiss-url"""
+FAISS_ITEM_TOWER_URL = 'http://zimu:10001/tower/rec_items'
+

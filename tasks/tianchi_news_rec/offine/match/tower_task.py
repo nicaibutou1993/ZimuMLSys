@@ -115,10 +115,10 @@ class TowerTask(object):
         """
 
         """1. 获取 feature_columns"""
-        user_feature_colums, item_feature_colums = self.get_feature_columns()
+        user_feature_columns, item_feature_columns = self.get_feature_columns()
 
         """2. 获取dataset 数据集"""
-        feature_columns = list(user_feature_colums) + list(item_feature_colums)
+        feature_columns = list(user_feature_columns) + list(item_feature_columns)
         train_dataset = self.get_dataset(feature_columns, is_train=True)
         test_dataset = self.get_dataset(feature_columns, is_train=False)
 
