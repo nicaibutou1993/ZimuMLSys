@@ -10,6 +10,11 @@ CTR_FIELDS = ['user_id', 'article_id', 'click_environment',
               'history_click_articles',
               'history_click_categories', 'label']
 
+"""需要编码的字段"""
+ENCODDING_FIELDS = ['user_id', 'article_id', 'click_environment', 'click_deviceGroup', 'click_os',
+                    'click_country', 'click_region', 'click_referrer_type', 'category_id']
+
+
 """模型数据集 存放位置"""
 CTR_TF_RECORD_DATA_PATH = 'E:/data/tianchi_news_rec/tf_recored/'
 
@@ -21,4 +26,7 @@ TF_SERVING_USER_TOWER_URL = 'http://zimu:8501/v1/models/user_tower:predict'
 
 """双塔模型 item 侧 faiss-url"""
 FAISS_ITEM_TOWER_URL = 'http://zimu:10001/tower/rec_items'
+
+HIVE_METASTORE_URIS = 'thrift://192.168.18.99:9083'
+SPARK_SQL_WAREHOUSE_DIR = "/user/hive/warehouse"
 

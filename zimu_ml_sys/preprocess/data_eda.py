@@ -39,6 +39,8 @@ class DataEDA(object):
             print('----数据分布情况----')
             print(self.data_frame.describe(percentiles))
 
+        return self
+
     def fields_count_distribution(self, fields=None, is_print_count_value=True):
         """
         图表展示 每一个字段 count分布情况
@@ -70,8 +72,11 @@ class DataEDA(object):
                 for field in fields:
                     display(field)
 
-    def fields_count_with_label_distribution(self, label_field, fields=None):
+        return self
+
+    def fields_count_with_label_distribution(self, label_field, fields=None, kind='bar'):
         """
+        柱状图：
         图表展示 每一个字段 与 label 字段 count分布情况
         :param self.data_frame:
         :param label_field:
@@ -95,7 +100,7 @@ class DataEDA(object):
                         self.data_frame[label_field] == label_value].value_counts()
 
                 df = pd.DataFrame(field_label_mapping)
-                df.plot(kind='bar', stacked=True)
+                df.plot(kind=kind, stacked=True)
 
                 plt.xlabel(field)
                 plt.ylabel("count")
@@ -113,6 +118,63 @@ class DataEDA(object):
             elif isinstance(fields, list):
                 for field in fields:
                     display(field)
+
+        return self
+
+    def fields_count_with_cross_feature_distribution(self, main_cross_feature_field, fields=None):
+        """
+        柱状图：
+        表示 选择两个特征，查看在某个特征情况下
+        :param main_cross_feature_field:
+        :param fields:
+        :param kind:
+        :return:
+        """
+        self.fields_count_with_label_distribution(label_field=main_cross_feature_field, fields=fields)
+
+        return self
+
+    def fields_cross_feature_kde_distribution(self, main_cross_feature_field, fields=None):
+        """
+        曲线图：
+        交叉特征展示：一般针对 连续变量 在 某个类别变量 表现的密度情况
+        比如： 年龄：连续变量， 性别：类别变量， 分析 在每一个年龄值 查看 性别男女的比例 情况
+        :param main_cross_feature_field: 类别变量，比如 性别
+        :param fields: 可以是 连续变量 也可以是 类别变量，主要查看 密度
+        :return:
+        """
+
+        if isinstance(self.data_frame, pd.DataFrame):
+            values = self.data_frame[main_cross_feature_field].unique()
+
+            def display(field):
+
+                fig = plt.figure()
+                fig.set(alpha=0.2)  # 设定图表颜色alpha参数
+
+                for value in values:
+                    self.data_frame[field][self.data_frame[main_cross_feature_field] == value].plot(kind='kde')
+
+                plt.xlabel(field)  # plots an axis lable
+                plt.ylabel(u"密度")
+                plt.title(main_cross_feature_field)
+                plt.legend(values, loc='best')
+                plt.show()
+
+            if fields is None:
+
+                columns = self.data_frame.columns
+
+                for field in columns:
+                    display(field)
+
+            elif isinstance(fields, str):
+                display(fields)
+            elif isinstance(fields, list):
+                for field in fields:
+                    display(field)
+
+        return self
 
     def fields_heatmap(self, fields=None, is_encoder=True):
         """
@@ -137,3 +199,5 @@ class DataEDA(object):
                 plt.figure(figsize=(len(fields) + 2, len(fields)))
                 sns.heatmap(df.corr().abs(), annot=True)
                 plt.show()
+
+        return self
