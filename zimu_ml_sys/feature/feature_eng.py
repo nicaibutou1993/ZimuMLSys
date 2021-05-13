@@ -110,24 +110,14 @@ class FeatureENG(object):
 
         return self
 
+    def standard_scaler_data(self, field_names):
 
-    def standard_scaler_data(self,field_names):
-
-        if isinstance(field_names,str):
+        if isinstance(field_names, str):
             field_names = [field_names]
 
         scaler = StandardScaler()
         for field_name in field_names:
-
             scaler.fit(self.data_frame[field_name])
-
-
-
-
-
-
-
-
 
 
 if __name__ == '__main__':
