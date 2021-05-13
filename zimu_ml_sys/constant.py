@@ -3,6 +3,8 @@ import os
 
 MODULE_NAME = 'zimu_ml_sys'
 
+TASK_NAME = 'zimu_ml'
+
 CURRENT_PROJECT_PATH = os.path.abspath(__file__).split(MODULE_NAME)[0]
 
 """编码 数据路径"""

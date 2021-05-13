@@ -5,7 +5,7 @@ from zimu_ml_sys.constant import *
 import glob
 
 
-def read_encoding_mapping_data(task_name, feature_fields=None):
+def read_encoding_mapping_data(task_name=TASK_NAME, feature_fields=None):
     """
     根据类别变量名称 读取编码mapping
     :param feature_fields: list or str 表示 字段名称
