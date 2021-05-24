@@ -8,7 +8,7 @@ from zimu_ml_sys.constant import CHECKPOINT_DATA_PATH, FEATURE_DATA_PATH
 from zimu_ml_sys.core.feature_columns import SparseFeat, VarLenSparseFeat
 from zimu_ml_sys.utils.data_util import read_encoding_mapping_data
 from zimu_ml_sys.utils.tf_record_util import get_tf_record_beans, tf_record_to_dataset
-from zimu_ml_sys.core.models.tower import Tower, get_item_tower_output_vectors
+from zimu_ml_sys.core.ctr_models.tower import Tower, get_item_tower_output_vectors
 import pickle
 
 import glob

@@ -7,7 +7,7 @@ import tensorflow.keras as keras
 
 from tasks.tianchi_news_rec.constant import *
 from zimu_ml_sys.core.feature_columns import SparseFeat, VarLenSparseFeat
-from zimu_ml_sys.core.models.dcn import DCN
+from zimu_ml_sys.core.ctr_models.dcn import DCN
 from zimu_ml_sys.utils.data_util import read_encoding_mapping_data
 from zimu_ml_sys.utils.tf_record_util import get_tf_record_beans, tf_record_to_dataset
 
