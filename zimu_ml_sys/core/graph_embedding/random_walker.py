@@ -3,6 +3,7 @@ import itertools
 import random
 import numpy as np
 from joblib import Parallel, delayed
+from multiprocessing.pool import ThreadPool
 
 
 def create_alias_table(area_ratio):
@@ -159,11 +160,14 @@ class RandomWalker:
         """
         G = self.G
         nodes = list(G.nodes())
-        results = Parallel(n_jobs=workers, verbose=verbose, )(
-            delayed(self._simulate_walks)(nodes, num, walk_length) for num in
-            partition_num(num_walks, workers))
+        # results = Parallel(n_jobs=workers, verbose=verbose, )(
+        #     delayed(self._simulate_walks)(nodes, num, walk_length) for num in
+        #     partition_num(num_walks, workers))
 
-        walks = list(itertools.chain(*results))
+        # walks = list(itertools.chain(*results))
+
+        walks = self._simulate_walks(nodes, num_walks, walk_length)
+
         return walks
 
     def _simulate_walks(self, nodes, num_walks, walk_length, ):
@@ -171,6 +175,7 @@ class RandomWalker:
         for _ in range(num_walks):
             random.shuffle(nodes)
             for v in nodes:
+                #print(_, v)
                 if self.p == 1 and self.q == 1:
                     walks.append(self.deepwalk_walk(
                         walk_length=walk_length, start_node=v))
@@ -223,14 +228,27 @@ class RandomWalker:
         """
         G = self.G
         alias_nodes = {}
+
         for node in G.nodes():
             unnormalized_probs = [G[node][nbr].get('weight', 1.0) for nbr in G.neighbors(node)]
             norm_const = sum(unnormalized_probs)
             normalized_probs = [float(u_prob) / norm_const for u_prob in unnormalized_probs]
             alias_nodes[node] = create_alias_table(normalized_probs)
         alias_edges = {}
-        for edge in G.edges():
+
+        # for edge in G.edges():
+        #     alias_edges[edge] = self.get_alias_edge(edge[0], edge[1])
+        print(len(G.edges()))
+
+        def paralize_func(edge):
+            # print(edge)
             alias_edges[edge] = self.get_alias_edge(edge[0], edge[1])
+
+        pool_size = 20
+        pool = ThreadPool(pool_size)  # 创建一个线程池
+        pool.map(paralize_func, G.edges())  # 往线程池中填线程
+        pool.close()  # 关闭线程池，不再接受线程
+        pool.join()
 
         self.alias_nodes = alias_nodes
         self.alias_edges = alias_edges

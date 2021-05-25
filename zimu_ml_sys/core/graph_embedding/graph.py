@@ -3,7 +3,7 @@ import networkx as nx
 import numpy as np
 
 
-def build_graph(df, user_col, item_col, time_col='', direction=True, new_wei=False):
+def build_graph(edgelist, direction=True, new_wei=False):
     """
 
     构建图：
@@ -34,32 +34,32 @@ def build_graph(df, user_col, item_col, time_col='', direction=True, new_wei=Fal
     :param new_wei:
     :return:
     """
-    user_item_ = df.groupby(user_col)[item_col].agg(list).reset_index()
-    user_item_dict = dict(zip(user_item_[user_col], user_item_[item_col]))
-    edgelist = []
-
-    if time_col:
-        user_time_ = df.groupby(user_col)['time'].agg(list).reset_index()  # 引入时间因素
-        user_time_dict = dict(zip(user_time_[user_col], user_time_['time']))
-
-    item_cnt = df[item_col].value_counts().to_dict()
-
-    for user, items in user_item_dict.items():
-        for i in range(len(items) - 1):
-            if direction:
-                t1 = user_time_dict[user][i]  # 点击时间提取
-                t2 = user_time_dict[user][i + 1]
-                delta_t = abs(t1 - t2) * 50000  # 中值 0.01 75%:0.02
-                #             有向有权图，热门商品-->冷门商品权重=热门商品个数/冷门商品个数
-                ai, aj = item_cnt[items[i]], item_cnt[items[i + 1]]
-                """ 1. delta_t: 时间差 时间差越大，表示两个节点 相关性越低
-                    2. np.log(1 + ai / aj) 前者相比后者热度越高，则权重越大，使得node2vector 加大对冷门item 进行采样 
-                    3. 0.8：表示逆序情况下，需要降低 两item 之间的权重值
-                """
-                edgelist.append([items[i], items[i + 1], max(3, np.log(1 + ai / aj)) * 1 / (1 + delta_t)])
-                edgelist.append([items[i + 1], items[i], max(3, np.log(1 + aj / ai)) * 0.8 * 1 / (1 + delta_t)])
-            else:
-                edgelist.append([items[i], items[i + 1], 1])
+    # user_item_ = df.groupby(user_col)[item_col].agg(list).reset_index()
+    # user_item_dict = dict(zip(user_item_[user_col], user_item_[item_col]))
+    # edgelist = []
+    #
+    # if time_col:
+    #     user_time_ = df.groupby(user_col)['time'].agg(list).reset_index()  # 引入时间因素
+    #     user_time_dict = dict(zip(user_time_[user_col], user_time_['time']))
+    #
+    # item_cnt = df[item_col].value_counts().to_dict()
+    #
+    # for user, items in user_item_dict.items():
+    #     for i in range(len(items) - 1):
+    #         if direction:
+    #             t1 = user_time_dict[user][i]  # 点击时间提取
+    #             t2 = user_time_dict[user][i + 1]
+    #             delta_t = abs(t1 - t2) * 50000  # 中值 0.01 75%:0.02
+    #             #             有向有权图，热门商品-->冷门商品权重=热门商品个数/冷门商品个数
+    #             ai, aj = item_cnt[items[i]], item_cnt[items[i + 1]]
+    #             """ 1. delta_t: 时间差 时间差越大，表示两个节点 相关性越低
+    #                 2. np.log(1 + ai / aj) 前者相比后者热度越高，则权重越大，使得node2vector 加大对冷门item 进行采样
+    #                 3. 0.8：表示逆序情况下，需要降低 两item 之间的权重值
+    #             """
+    #             edgelist.append([items[i], items[i + 1], max(3, np.log(1 + ai / aj)) * 1 / (1 + delta_t)])
+    #             edgelist.append([items[i + 1], items[i], max(3, np.log(1 + aj / ai)) * 0.8 * 1 / (1 + delta_t)])
+    #         else:
+    #             edgelist.append([items[i], items[i + 1], 1])
     if direction:
         G = nx.DiGraph()
     else:

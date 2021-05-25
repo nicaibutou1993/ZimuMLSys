@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from tasks.titanic.constant import *
-from zimu_ml_sys.preprocess.data_eda import DataEDA
+from zimu_ml_sys.eda.data_eda import DataEDA
 from zimu_ml_sys.feature.feature_eng import FeatureENG
 from sklearn import linear_model
 import pandas as pd

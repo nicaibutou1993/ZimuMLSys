@@ -15,3 +15,6 @@ CHECKPOINT_DATA_PATH = os.path.join(CURRENT_PROJECT_PATH, os.path.join('data', '
 
 """特征数据保存路径"""
 FEATURE_DATA_PATH = os.path.join(CURRENT_PROJECT_PATH, os.path.join('data', 'feature_data'))
+
+"""预处理数据"""
+PREPROCESS_DATA_PATH = os.path.join(CURRENT_PROJECT_PATH, os.path.join('data', 'preprocess_data'))
