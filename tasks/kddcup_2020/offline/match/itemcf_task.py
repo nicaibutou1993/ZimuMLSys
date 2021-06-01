@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 import os
+import time
 
 import pandas as pd
 
 from tasks.kddcup_2020.constant import TASK_NAME
 from zimu_ml_sys.constant import PREPROCESS_DATA_PATH, FEATURE_DATA_PATH
 from zimu_ml_sys.utils.data_util import df_group_parallel
-
+import joblib
 from tasks.kddcup_2020.offline.match.graph_embedding_task import GraphEmbeddingTask
 from gensim.models.keyedvectors import KeyedVectors
 import math
@@ -14,9 +15,26 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 import gc
+from zimu_ml_sys.utils.parallel_util import process_parallel
 
 
 class ItemCFTask(object):
+    """
+        1. compute_sim_item： 计算全局 item 与 item 两两之间的相似度
+            根据用户点击序列，具体因素：（时间差，位置差，item 热门程度，用户个人的活跃程度，item与item 模型相似度：（node,deep,text,image等等））
+
+        2. recommend： 召回阶段，实现一个用户 召回 topN 个item
+            根据用户点击序列：根据用户序列中每一个item：
+                    1. 找到该item 相似的topN items(备注：从全局中查找)
+                    2. 用户点击item 距离 当前的 （时间差，位置差，推荐的item 最早出现时间，推荐item 热门程度，）
+    """
+
+    """
+    针对数据量大：
+        1. 写入多个文件，针对文件的加载，使用多进程方式 并发加载
+        2. 使用joblib，同时 数据中如果有数组，尽量使用numpy.array 方式，joblib 会将numpy 数据 压缩成很小的大小
+    """
+
     """
     相关度计算：
         1. 通过模型，训练item Embedding：  粗粒度 (这里有一定随机游走，没有更 精细的体现 位置差 时间差 等等其他更细节的特征加入)
@@ -53,6 +71,10 @@ class ItemCFTask(object):
     """使用提供的文本模型 存放两两item 计算的相似度,避免重复计算"""
     txt_sim_mapping = {}
 
+    RELATE_ITEM_NUM = 100
+
+    is_evaluate = True
+
     def __init__(self):
 
         graph_embedding_task = GraphEmbeddingTask()
@@ -63,7 +85,7 @@ class ItemCFTask(object):
     def recommend(self, user_ids, sim_item_corr,
                   user_items_dict, user_times_dict,
                   item_value_counts_dict, item_time_dict,
-                  top_k=500, item_num=1000
+                  top_k=100, item_num=200
                   ):
 
         """
@@ -114,13 +136,18 @@ class ItemCFTask(object):
 
         ranks = {}
 
-        for user_id in tqdm(user_ids):
+        file_nums = 10
+        total_num = len(user_ids)
+        batch_size = int(total_num / file_nums)
+
+        for i, user_id in enumerate(user_ids):
             if user_id in user_items_dict:
                 items = user_items_dict[user_id][::-1]
                 times = user_times_dict[user_id][::-1]
                 t0 = times[0]
                 rank = {}
                 for loc, item in enumerate(items):
+
                     for sim_item, wij in sorted(sim_item_corr[item].items(),
                                                 key=lambda x: x[1][0],
                                                 reverse=True)[:top_k]:
@@ -161,7 +188,8 @@ class ItemCFTask(object):
                             '''
 
                             rank.setdefault(sim_item,
-                                            [0, 0, 0, np.inf, np.inf, np.inf, np.inf, np.inf, -1e8, 0, -1e8, 0])
+                                            np.array(
+                                                [0, 0, 0, np.inf, np.inf, np.inf, np.inf, np.inf, -1e8, 0, -1e8, 0]))
 
                             """最新点击时间 与 当前点击的item 时间差"""
                             delta_t1 = abs(t0 - times[loc]) / (60 * 60)
@@ -243,7 +271,18 @@ class ItemCFTask(object):
 
                 ranks[user_id] = rank
 
-        return ranks
+            if i % batch_size == 0 or i == total_num - 1:
+                if i != 0:
+                    part = int(i / batch_size) + 1 if i == total_num - 1 else int(i / batch_size)
+                    print('write user rec items ', part)
+                    data_path = os.path.join(self.feature_root_data_path, 'itemcf_user_rec_items_%s.pkl' % str(part))
+                    joblib.dump(ranks, open(data_path, mode='wb'))
+                    del ranks
+                    ranks = {}
+
+        # joblib.dump(ranks, open(os.path.join(self.feature_root_data_path, 'itemcf_user_rec_items.pkl'), mode='wb'))
+
+        # return ranks
 
     def compute_sim_item(self, train_df):
 
@@ -367,14 +406,14 @@ class ItemCFTask(object):
                       'deep_sim': -1e8,-----------7
                       'deep_sim_sum':0----------------8
                     """
-                    sim_item[item].setdefault(relate_item, [0, 0, 0, np.inf, np.inf, -1e8, 0, -1e8, 0])
+                    sim_item[item].setdefault(relate_item, np.array([0, 0, 0, np.inf, np.inf, -1e8, 0, -1e8, 0]))
 
                     """1. 时间差：
                     当前item 与 relate_itme 相隔时间差，时间差越大，表示相关性越小
                     这里 60 * 60 进行时间差 压缩，根据不同情况进行不同的缩放，
                     时间设置： 统计所有的时间差，然后取一个中值 即可
                     """
-                    delta_time = abs(times[loc1] - times[loc2]) / (60 * 60)
+                    delta_time = self.myround(abs(times[loc1] - times[loc2]) / (60 * 60), 4)
 
                     """2. 位置差
                     两个item 点击的位置差，位置差越大，表示两item 相关性越小"""
@@ -383,17 +422,17 @@ class ItemCFTask(object):
                     """3. node2vector 相似度
                     根据训练的node2vector 模型 判断 两item之间的相似情况
                     """
-                    node_sim = self.compute_node2vector_sim(item, relate_item)
+                    node_sim = self.myround(self.compute_node2vector_sim(item, relate_item), 4)
 
                     """4. deepwalker 相似度
                     根据训练的deepwalker 模型 判断 两item之间的相似情况
                     """
-                    deep_sim = self.compute_deepwalker_sim(item, relate_item)
+                    deep_sim = self.myround(self.compute_deepwalker_sim(item, relate_item), 4)
 
                     """5. 文本 相似度
                     使用提供的文本向量 判断 两item之间的相似情况
                     """
-                    txt_sim = self.compute_txt_sim(item, relate_item)
+                    txt_sim = self.myround(self.compute_txt_sim(item, relate_item), 4)
 
                     """
                         计算两item 总体相似度情况， 
@@ -414,15 +453,16 @@ class ItemCFTask(object):
                         sim = sim * 0.8  ## 表示逆序 需要降权
 
                     """1. 计算 两item 累积权重"""
-                    sim_item[item][relate_item][0] += sim
+                    sim_item[item][relate_item][0] = self.myround(sim_item[item][relate_item][0] + sim, 4)
 
                     """2. 计算 两item 共线次数"""
                     sim_item[item][relate_item][1] += 1
 
                     """3. 仅仅只考虑 位置 时间 用户序列长度 来评定 两个item的相关度 去除相关模型相似度"""
-                    sim_item[item][relate_item][2] += max(0.5, (0.9 ** (delta_loc - 1))) \
-                                                      * (max(0.5, 1 / (1 + delta_time))) \
-                                                      / math.log(1 + len(items))
+                    sim_item[item][relate_item][2] = self.myround(
+                        sim_item[item][relate_item][2] + max(0.5, (0.9 ** (delta_loc - 1))) \
+                        * (max(0.5, 1 / (1 + delta_time))) \
+                        / math.log(1 + len(items)), 4)
 
                     """4. 取两item 时间差最短"""
                     if delta_time < sim_item[item][relate_item][3]:
@@ -434,10 +474,10 @@ class ItemCFTask(object):
 
                     """存储 node 及 deep 相似度 值"""
                     sim_item[item][relate_item][5] = node_sim
-                    sim_item[item][relate_item][6] += node_sim
+                    sim_item[item][relate_item][6] = self.myround(sim_item[item][relate_item][6] + node_sim, 4)
 
                     sim_item[item][relate_item][7] = deep_sim
-                    sim_item[item][relate_item][8] += deep_sim
+                    sim_item[item][relate_item][8] = self.myround(sim_item[item][relate_item][8] + deep_sim, 4)
 
         """
             最终针对最终的相似度 再次针对热度 降权操作 
@@ -447,16 +487,43 @@ class ItemCFTask(object):
         del self.node2vector_model
         del self.deepwalker_model
         del self.txt_model
-        gc.collect()
+        # gc.collect()
 
-        sim_item_corr = sim_item.copy()
-        for item, related_items in tqdm(sim_item.items()):
+        file_nums = 10
+        total_num = len(sim_item)
+        batch_size = int(total_num / file_nums)
+
+        tmp_sim_item = {}
+        """
+        针对每一个item，协同过滤出 100 相近的items,
+        并写入到文件中
+        """
+        for i, item in enumerate(list(sim_item.keys())):
+
+            related_items = sim_item.pop(item)
+
+            related_items = dict(
+                sorted(related_items.items(), key=lambda x: x[1][0], reverse=True)[:self.RELATE_ITEM_NUM])
+
             for relate_item, cij in related_items.items():
+                """针对热门item 总体上 再次 降权"""
                 cosine_sim = cij[0] / ((item_value_counts_dict[item] * item_value_counts_dict[relate_item]) ** 0.2)
-                sim_item_corr[item][relate_item][0] = cosine_sim
-                sim_item_corr[item][relate_item] = [self.myround(x, 4) for x in sim_item_corr[item][relate_item]]
+                related_items[relate_item][0] = self.myround(cosine_sim, 4)
 
-        return sim_item_corr, user_items_dict, user_times_dict, item_value_counts_dict, item_time_dict
+            tmp_sim_item[item] = related_items
+
+            if i % batch_size == 0 or i == total_num - 1:
+                if i != 0:
+                    part = int(i / batch_size) + 1 if i == total_num - 1 else int(i / batch_size)
+                    data_path = os.path.join(self.feature_root_data_path, 'itemcf_sim_item_%s.pkl' % str(part))
+                    joblib.dump(tmp_sim_item,
+                                open(data_path, mode='wb'))
+
+                    del tmp_sim_item
+                    tmp_sim_item = {}
+
+        joblib.dump((user_items_dict, user_times_dict, item_value_counts_dict, item_time_dict),
+                    open(os.path.join(self.feature_root_data_path, 'itemcf_other_sim_item.pkl'), mode='wb'))
 
     def myround(self, x, thres):
         temp = 10 ** thres
@@ -500,31 +567,212 @@ class ItemCFTask(object):
 
     def read_data(self):
         """读取数据集"""
+        train_df = pd.DataFrame()
 
-        train_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'train.csv'))
-
-        validate_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'validate.csv'))
+        if self.is_evaluate:
+            validate_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'validate.csv'))
+        else:
+            train_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'train.csv'))
+            validate_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'validate.csv'))
 
         return train_df, validate_df
 
+    def rec_fill_hot_items(self, user_rec_items_df, hot_items, topk=50):
+        """针对召回数据进行评估
+            预测结果：itemcf_推荐的前 top50
+            真实结果：真实用户下一次点击的item
+        """
+
+        print('fill hot items ')
+        user_rec_items_df = user_rec_items_df[['user_id', 'item_id', 'feature_0']]
+
+        user_ids = list(user_rec_items_df['user_id'].unique())
+
+        scores = [-i for i in range(1, len(hot_items) + 1)]
+
+        hot_df = pd.DataFrame(user_ids * len(hot_items), columns=['user_id'])
+        hot_df['item_id'] = hot_items * len(user_ids)
+        hot_df['feature_0'] = scores * len(user_ids)
+
+        user_rec_items_df = user_rec_items_df.append(hot_df)
+        user_rec_items_df = user_rec_items_df.sort_values('feature_0', ascending=True)
+        user_rec_items_df = user_rec_items_df.drop_duplicates(subset=['user_id', 'item_id'], keep='first')
+
+        user_rec_items_df['rank'] = user_rec_items_df.groupby('user_id')['feature_0'].rank(method='first',
+                                                                                           ascending=False)
+
+        user_rec_items_df = user_rec_items_df[user_rec_items_df['rank'] <= topk]
+
+        # print(user_rec_items_df.head(100))
+
+        user_rec_items_df.to_csv(os.path.join(self.feature_root_data_path, 'match_evaluate_itemcf_user_rec_items.csv'))
+
+        # user_rec_items_df.grouby('user_id')['item_id']
+
+    def func(self, file_name):
+        print(file_name)
+        sim_item_corr = joblib.load(open(file_name, mode='rb'))
+        return sim_item_corr
+
+    def evaluate(self, predictions, answers, rank_num):
+        """
+        ##https://blog.csdn.net/weixin_41332009/article/details/113343838
+        ##推荐算法常用评价指标：ROC、AUC、F1、HR、MAP、NDCG
+        召回评估
+        predictions： {user_id:[items]}
+        answers: {user_id:(item_id,item_count)}
+        """
+
+        list_item_degress = []
+        for user_id in answers:
+            item_id, item_degree = answers[user_id]
+            list_item_degress.append(item_degree)
+        list_item_degress.sort()
+        median_item_degree = list_item_degress[len(list_item_degress) // 2]
+
+        num_cases_full = 0.0
+        ndcg_50_full = 0.0
+        ndcg_50_half = 0.0
+        num_cases_half = 0.0
+        hitrate_50_full = 0.0
+        hitrate_50_half = 0.0
+        for user_id in answers:
+            if user_id in predictions:
+                item_id, item_degree = answers[user_id]
+                rank = 0
+                while rank < rank_num and predictions[user_id][rank] != item_id:
+                    rank += 1
+                num_cases_full += 1.0
+                if rank < rank_num:
+                    ndcg_50_full += 1.0 / np.log2(rank + 2.0)
+                    hitrate_50_full += 1.0
+                if item_degree <= median_item_degree:
+                    num_cases_half += 1.0
+                    if rank < rank_num:
+                        ndcg_50_half += 1.0 / np.log2(rank + 2.0)
+                        hitrate_50_half += 1.0
+        ndcg_50_full /= num_cases_full
+        hitrate_50_full /= num_cases_full
+        ndcg_50_half /= num_cases_half
+        hitrate_50_half /= num_cases_half
+
+        print([ndcg_50_full, ndcg_50_half,
+               hitrate_50_full, hitrate_50_half])
+
+        return np.array([ndcg_50_full, ndcg_50_half,
+                         hitrate_50_full, hitrate_50_half], dtype=np.float32)
+
     def run(self):
-        train_df, validate_df = self.read_data()
 
-        data_path = os.path.join(self.feature_root_data_path, 'itemcf_sim_item.pkl')
+        if self.is_evaluate:
 
-        if os.path.exists(data_path):
-            sim_item_corr, user_items_dict, user_times_dict, item_value_counts_dict, item_time_dict = \
-                pickle.load(open(data_path, mode='rb'))
-
-        else:
-            sim_item_corr, \
             user_items_dict, \
             user_times_dict, \
             item_value_counts_dict, \
-            item_time_dict = self.compute_sim_item(train_df)
+            item_time_dict = joblib.load(os.path.join(self.feature_root_data_path, 'itemcf_other_sim_item.pkl'))
 
-            pickle.dump((sim_item_corr, user_items_dict, user_times_dict, item_value_counts_dict, item_time_dict),
-                        open(data_path, mode='wb'))
+            _, validate_df = self.read_data()
+
+            validate_df['item_count'] = validate_df['item_id'].apply(lambda x: item_value_counts_dict.get(x))
+
+            path = os.path.join(self.feature_root_data_path, 'match_evaluate_itemcf_user_rec_items.csv')
+            if os.path.exists(path):
+                user_item_rec_df = pd.read_csv(path)
+
+                user_item_rec_df = user_item_rec_df.sort_values('rank').groupby('user_id')['item_id'].agg(
+                    list).reset_index()
+
+                user_item_rec_df = user_item_rec_df.set_index('user_id')
+                user_item_rec_dict = user_item_rec_df.to_dict(orient='index')
+                user_item_rec_dict = {k: v.get('item_id') for k, v in user_item_rec_dict.items()}
+
+                validate_df = validate_df.set_index('user_id')
+                validate_dict = validate_df.to_dict(orient='index')
+                validate_dict = {k: (v.get('item_id'), v.get('item_count')) for k, v in validate_dict.items()}
+
+                self.evaluate(user_item_rec_dict, validate_dict, 50)
+
+
+            else:
+
+                user_rec_items_df = pd.read_csv(os.path.join(self.feature_root_data_path, 'itemcf_user_rec_items.csv'))
+
+                user_items_dict, \
+                user_times_dict, \
+                item_value_counts_dict, \
+                item_time_dict = joblib.load(os.path.join(self.feature_root_data_path, 'itemcf_other_sim_item.pkl'))
+
+                hot_items = sorted(item_value_counts_dict.items(), key=lambda x: x[1], reverse=True)[:50]
+                hot_items = [item[0] for item in hot_items]
+
+                """针对 某些用户 推荐 可能 不足top 50,需要通过 热门 进行补充"""
+                self.rec_fill_hot_items(user_rec_items_df, hot_items)
+
+
+
+
+
+
+
+        else:
+            train_df, validate_df = self.read_data()
+
+            data_path = os.path.join(self.feature_root_data_path, 'itemcf_sim_item_1.pkl')
+
+            if not os.path.exists(data_path):
+                self.compute_sim_item(train_df)
+
+            file_names = [os.path.join(self.feature_root_data_path, name)
+                          for name in filter(lambda x: x.startswith('itemcf_sim_item_'),
+                                             os.listdir(self.feature_root_data_path))]
+            datas = process_parallel(file_names, self.func, n_jobs=len(file_names))
+            sim_item_corr = datas.pop(0)
+            for data in datas:
+                sim_item_corr.update(data)
+
+            user_items_dict, \
+            user_times_dict, \
+            item_value_counts_dict, \
+            item_time_dict = joblib.load(os.path.join(self.feature_root_data_path, 'itemcf_other_sim_item.pkl'))
+
+            user_ids = validate_df['user_id'].unique()
+
+            self.recommend(user_ids, sim_item_corr,
+                           user_items_dict, user_times_dict,
+                           item_value_counts_dict, item_time_dict)
+
+            """将用户推荐 数据 写成 csv 格式"""
+            file_names = [os.path.join(self.feature_root_data_path, name)
+                          for name in filter(lambda x: x.startswith('itemcf_user_rec_items_'),
+                                             os.listdir(self.feature_root_data_path))]
+
+            # file_names = [os.path.join(self.feature_root_data_path,'itemcf_user_rec_items_1.pkl')]
+
+            datas = process_parallel(file_names, self.func, n_jobs=len(file_names))
+            user_rec_items = datas.pop(0)
+            for data in datas:
+                user_rec_items.update(data)
+
+            datas = []
+            for user_id, rec_items_data in user_rec_items.items():
+                try:
+                    if len(rec_items_data) > 0:
+                        users = np.array([[user_id]] * len(rec_items_data))
+                        rec_items_data = np.array(rec_items_data)
+                        items = rec_items_data[:, 0].reshape(-1, 1)
+                        features = np.concatenate(rec_items_data[:, 1], axis=0).reshape(-1, 12)
+                        data = np.concatenate([users, items, features], axis=1)
+                        datas.extend(data)
+                except Exception as e:
+                    print(e)
+                    print(rec_items_data)
+
+            data_df = pd.DataFrame(datas,
+                                   columns=list(['user_id', 'item_id']) + list(
+                                       ['feature_' + str(i) for i in range(12)]))
+
+            user_rec_items_path = os.path.join(self.feature_root_data_path, 'itemcf_user_rec_items.csv')
+            data_df.to_csv(user_rec_items_path)
 
     def explore_time_importance(self):
         """
