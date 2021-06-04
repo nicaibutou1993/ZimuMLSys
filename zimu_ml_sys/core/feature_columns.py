@@ -6,6 +6,7 @@ import copy
 from tensorflow.keras.initializers import GlorotUniform, Zeros
 from zimu_ml_sys.core.layers import SequencePoolingLayer
 from zimu_ml_sys.core.layers import Hash
+from zimu_ml_sys.core.layers import PositionEmbedding
 
 
 class SparseFeat:
@@ -49,19 +50,42 @@ class DenseFeat:
         self.dtype = dtype
 
 
+class ConditionFeat:
+    """外部条件输入模型，比如true_label 输入模型"""
+
+    def __init__(self, name,
+                 dimension=(1,),
+                 embedding_name=None,
+                 is_pred=False,
+                 dtype='int64'):
+        """
+        :param name:
+        :param dimension: 维度 (50,20)
+        :param embedding_name: 默认 None，表示不需要进行 Embedding操作。 指定Embedding名称
+        :param is_pred: 如果设置为 true,针对额外输入，输入的是否 参与 预测阶段，比如输入一些items,用于 预测这些items 概率
+        :param dtype:
+        """
+        self.name = name
+        self.dimension = dimension
+        self.dtype = dtype
+        self.embedding_name = embedding_name
+        self.is_pred = is_pred
+
+
 class VarLenSparseFeat:
     """
     针对seq 序列变量
 
     is_hist_pooling: 针对 历史 相关特征  在进行 Embedding，是否进行 pooling (mean)
-
+    is_position: 针对 历史序列特征，是否 考虑位置信息
     """
 
-    def __init__(self, sparsefeat, maxlen, is_hist_mean_pooling=True):
+    def __init__(self, sparsefeat, maxlen, is_hist_mean_pooling=True, is_position=False):
         self.sparsefeat = sparsefeat
         self.maxlen = maxlen
 
         self.is_hist_mean_pooling = is_hist_mean_pooling
+        self.is_position = is_position
 
     @property
     def name(self):
@@ -112,6 +136,9 @@ def build_input_layers(feature_columns):
         elif isinstance(fc, DenseFeat):
             features_input_layers[fc.name] = Input(name=fc.name, shape=(1,), dtype=fc.dtype)
 
+        elif isinstance(fc, ConditionFeat):
+            features_input_layers[fc.name] = Input(name=fc.name, shape=fc.dimension, dtype=fc.dtype)
+
         else:
             raise TypeError("Invalid feature column type,got", type(fc))
 
@@ -135,25 +162,21 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
     :return: embedding dict 和 dense dict 可能是 dict 也可能是 tensor
     """
     embedding_layers = OrderedDict()
-
     sparse_embedding_outputs_dict = OrderedDict()
-
     var_embedding_outputs_dict = OrderedDict()
-
     dense_outputs_dict = OrderedDict()
+    condition_outputs_dict = OrderedDict()
 
     sparse_feature_columns = {feature_column.name: feature_column for feature_column in feature_columns if
                               isinstance(feature_column, SparseFeat)}
-
     var_feature_columns = {feature_column.name: feature_column for feature_column in feature_columns if
                            isinstance(feature_column, VarLenSparseFeat)}
-
     dense_feature_columns = {feature_column.name: feature_column for feature_column in feature_columns if
                              isinstance(feature_column, DenseFeat)}
+    condition_feature_columns = {feature_column.name: feature_column for feature_column in feature_columns if
+                                 isinstance(feature_column, ConditionFeat)}
 
-    for name, feature_column in dense_feature_columns:
-        dense_outputs_dict[feature_column.name] = input_layers[name]
-
+    """create embedding layer"""
     for name, feature_column in sparse_feature_columns.items():
         embedding_layers[feature_column.embedding_name] = Embedding(input_dim=feature_column.vocabulary_size,
                                                                     output_dim=feature_column.embedding_dim,
@@ -169,6 +192,27 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
                                                                     name=prefix + 'var' + '_emb_' + name
                                                                     )
 
+        # embedding = Embedding(input_dim=feature_column.vocabulary_size, output_dim=feature_column.embedding_dim,
+        #                       embeddings_initializer=feature_column.embeddings_initializer, mask_zero=mask_zero,
+        #                       name=prefix + 'var' + '_emb_' + name)
+
+    """set dense output"""
+    for name, feature_column in dense_feature_columns.items():
+        dense_outputs_dict[feature_column.name] = input_layers[name]
+
+    """set condition output"""
+    for name, feature_column in condition_feature_columns.items():
+        embedding_name = feature_column.embedding_name
+        input_idx = input_layers[name]
+
+        if embedding_name:
+            embedding_layer = embedding_layers[embedding_name]
+            embedding_output = embedding_layer(input_idx)
+            condition_outputs_dict[feature_column.name] = embedding_output
+        else:
+            condition_outputs_dict[feature_column.name] = input_idx
+
+    """set sparse output"""
     for name, feature_column in sparse_feature_columns.items():
         embedding_layer = embedding_layers[name]
 
@@ -182,6 +226,7 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
     '''针对 序列变量 进行 Embedding，针对输入是 字符串。
         1. hash 分桶（可选），
         2. 针对序列 进行平均池化 （可选）
+        3. 是否添加 位置 信息（可选）
         '''
     for name, feature_column in var_feature_columns.items():
         embedding_name = feature_column.embedding_name
@@ -195,6 +240,9 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
             input_idx = Hash(feature_column.vocabulary_size)(input_idx)
 
         embedding_output = embedding_layer(input_idx)
+
+        if feature_column.is_position:
+            embedding_output = PositionEmbedding(feature_column.maxlen)(embedding_output)
 
         if feature_column.is_hist_mean_pooling:
             pooling_output = SequencePoolingLayer(mode='mean')(embedding_output)
@@ -219,7 +267,10 @@ def build_embedding_outputs(input_layers, feature_columns, mask_zero=True, prefi
         embedding_outputs = sparse_embedding_outputs_dict
         dense_outputs = dense_outputs_dict
 
-    return embedding_outputs, dense_outputs
+    if len(condition_outputs_dict) > 0:
+        return embedding_outputs, dense_outputs, condition_outputs_dict
+    else:
+        return embedding_outputs, dense_outputs
 
 
 def get_linear_logit(feature_input_layers, feature_columns, prefix='linear_'):

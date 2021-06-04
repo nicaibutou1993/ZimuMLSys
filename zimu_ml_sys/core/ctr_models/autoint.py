@@ -27,7 +27,7 @@ def AutoInt(feature_columns, hidden_units=(128, 128),
 
     att_input = embedding_outputs
     for i in range(att_layer_num):
-        att_input = MutiHeadSelfAttention(att_embedding_size, head_num, use_res=use_res)(att_input)
+        att_input = MutiHeadSelfAttention(head_num,att_embedding_size, use_res=use_res)(att_input)
 
     att_output = Flatten()(att_input)
 

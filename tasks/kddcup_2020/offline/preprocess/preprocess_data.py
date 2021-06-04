@@ -6,6 +6,7 @@ import pandas as pd
 from tasks.kddcup_2020.constant import TASK_DATA_PATH
 from zimu_ml_sys.constant import PREPROCESS_DATA_PATH, FEATURE_DATA_PATH
 from tasks.kddcup_2020.constant import TASK_NAME
+from zimu_ml_sys.feature.feature_eng import FeatureENG
 
 pd.set_option('display.max_row', None)
 
@@ -120,6 +121,32 @@ class PreprocessData(object):
             index=False,
             encoding='UTF-8')
 
+    def generate_rank_data_frame(self):
+        """
+        data_frame: user_id, seq_items: 用户点击序列， label: 最后一次点击的item
+            编码 user_id 及 item_id
+        :return: 训练用户与item ctr 模型 的 数据
+        """
+
+        train_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'train.csv'))
+        test_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'test.csv'))
+        validate_df = pd.read_csv(os.path.join(self.preprocess_root_data_path, 'validate.csv'))
+
+        all_df = train_df.append(test_df)
+        all_df = all_df.append(validate_df)
+
+        feature_eng = FeatureENG(task_name=TASK_NAME, data_frame=all_df)
+        all_df = feature_eng.encoding_fields(['user_id', 'item_id'], is_unk=True).data_frame
+
+        all_df = all_df.sort_values('time').groupby('user_id')['item_id'].agg(list).reset_index()
+
+        all_df.rename(columns={'item_id': 'history_items'}, inplace=True)
+
+        all_df['label'] = all_df['history_items'].apply(lambda x: x[-1])
+        all_df['history_items'] = all_df['history_items'].apply(lambda x: x[:-1])
+
+        return all_df
+
 
 if __name__ == '__main__':
-    PreprocessData().generate_train_and_test_validate_data()
+    PreprocessData().generate_rank_feature()

@@ -32,7 +32,7 @@ class FeatureENG(object):
     feature_operation_save_path = ''
     feature_operation_mapping = {}
 
-    def __init__(self, task_name=TASK_NAME, is_load_file=False):
+    def __init__(self, task_name=TASK_NAME, is_load_file=False, data_frame=None):
         """
         :param save_file: 是否加载 已经保存的操作模型及数据
         :param task_name: 当前执行任务名称
@@ -49,6 +49,11 @@ class FeatureENG(object):
         self.is_load_file = False
         if is_load_file and len(self.feature_operation_mapping) > 0:
             self.is_load_file = True
+
+        if data_frame is not None:
+            self.data_frame = data_frame
+            self.is_train = True
+
 
     def save_file(self):
         """
@@ -231,11 +236,15 @@ class FeatureENG(object):
                         .apply(lambda x: 1 if field_count_dict.get(x) >= by_count else 0)
         return self
 
-    def encoding_fields(self, field_names, save_file=True, mode='append', is_padding=True):
+    def encoding_fields(self, field_names, save_file=True, mode='append', is_padding=True, is_unk=False):
         """
         padding：0
             1. 作用一： 针对序列，可以为0
             2. 作用二： 针对unk, 还是设置 该id 为0，即表示padding 备注： 在SequencePoolingLayer 针对unk 会进行处理成unk 向量
+
+
+        is_padding：开启支持padding,主要针对序列特征，使用padding 补充0
+        is_unk: 开启支持 针对不认识的id,设置id 为1
 
         1. 训练阶段：
             1. 第一次训练模型 需要 index 需要从1 开始，预留0 0：padding
@@ -269,7 +278,7 @@ class FeatureENG(object):
                 field_values = self.data_frame[field].unique()
                 field_ids = set(field_values) - set(field2id.keys())
                 if len(field_ids) > 0:
-                    field_num = len(field2id) + sum([is_padding])
+                    field_num = len(field2id) + sum([is_padding,is_unk])
                     _id2field = {i + field_num: field_id for i, field_id in enumerate(field_ids)}
                     _field2id = {field_id: id for id, field_id in _id2field.items()}
 
@@ -279,7 +288,12 @@ class FeatureENG(object):
                     if save_file:
                         pickle.dump((id2field, field2id), open(path, mode='wb'))
 
-            self.data_frame[field] = self.data_frame[field].apply(lambda x: field2id.get(x, 0))
+            if is_unk:
+                default_index = 1
+            else:
+                default_index = 0
+
+            self.data_frame[field] = self.data_frame[field].apply(lambda x: field2id.get(x, default_index))
 
         return self
 

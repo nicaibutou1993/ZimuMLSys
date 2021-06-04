@@ -4,7 +4,14 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 from tensorflow.keras.initializers import glorot_normal, Zeros
 import itertools
-from zimu_ml_sys.core.snipets import sequence_masking
+from zimu_ml_sys.core.snipets import sequence_masking, lm_masking, unlim_masking
+from tensorflow.keras import initializers
+
+
+class Layer(Layer):
+    def __init__(self, **kwargs):
+        super(Layer, self).__init__(**kwargs)
+        self.supports_masking = True
 
 
 class FMLayer(Layer):
@@ -41,18 +48,37 @@ class DNNLayer(Layer):
     全连接层：
     dnn_hidden_units:(128,128,1)
     output_activation:sigmoid,softmax,None,relu
+
+    dnn_hidden_units: 为 None： 表示同 输入的 x最后一维，是相同维度, repeat_num 为次数
+
     """
 
-    def __init__(self, dnn_hidden_units, activation='relu', output_activation='', **kwargs):
+    def __init__(self, dnn_hidden_units=None, activation='relu', output_activation='', repeat_num=1, **kwargs):
+        """
+
+        :param dnn_hidden_units: 默认 None，即 输入值 （N,10,128）, 那么 权重为 （128,128）  与 repeat_num 共用
+        :param activation: 设置 统一激活层
+        :param output_activation: 设置 最后一层 激活层 默认同其 activation 激活一致，如果 output_activation 设置 None 表示没有激活
+        :param repeat_num: 同dnn_hidden_units 一起使用
+        :param kwargs:
+        """
         self.dnn_hidden_units = dnn_hidden_units
         self.activation = activation
         self.output_activation = output_activation
+        self.repeat_num = repeat_num
 
         super(DNNLayer, self).__init__(**kwargs)
 
     def build(self, input_shape):
 
-        hidden_units = list(self.dnn_hidden_units)
+        if self.dnn_hidden_units is None:
+            """与上一轮输出值，保持 相同的dim"""
+            unit = input_shape[-1]
+            hidden_units = list([unit for _ in range(self.repeat_num)])
+        else:
+            """自定义输入 """
+            hidden_units = list(self.dnn_hidden_units)
+
         last_unit = hidden_units.pop(-1)
         if self.output_activation == '':
             self.output_activation = self.activation
@@ -193,24 +219,49 @@ class AFMLayer(Layer):
 class MutiHeadSelfAttention(Layer):
     """多头self attention"""
 
-    def __init__(self, att_embedding_size, head_num, use_res=True, **kwargs):
+    def __init__(self, head_num,
+                 att_embedding_size=None,
+                 use_padding_masking=True,
+                 use_lm_masking=False,
+                 use_unlim_masking=False,
+                 use_res=True,
+                 **kwargs):
+        """
+
+        :param head_num: 多头
+        :param att_embedding_size: head_size
+        :param use_padding_masking: 默认开启：是否 针对padding 0 进行mask
+        :param use_lm_masking: 默认关闭：是否启用 下三角形 masking, 针对 未来信息 不可见，1. 可用于生成任务解码阶段，2. 推荐，用户点击序列
+        :param use_res: 默认开启： 是否使用残差设计，针对原始输入
+        :param kwargs:
+        """
         self.att_embedding_size = att_embedding_size
         self.head_num = head_num
         self.use_res = use_res
-
+        self.use_padding_masking = use_padding_masking
+        self.use_lm_masking = use_lm_masking
+        self.use_unlim_masking = use_unlim_masking
         super(MutiHeadSelfAttention, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        self.q_dense = Dense(self.att_embedding_size * self.head_num, activation='relu', )
-        self.k_dense = Dense(self.att_embedding_size * self.head_num, activation='relu', )
-        self.v_dense = Dense(self.att_embedding_size * self.head_num, activation='relu', )
+
+        if self.att_embedding_size is None:
+            out_dim = input_shape[-1]
+            self.att_embedding_size = out_dim // self.head_num
+        else:
+            self.att_embedding_size = self.att_embedding_size // self.head_num
+
+        self.q_dense = Dense(self.att_embedding_size * self.head_num)
+        self.k_dense = Dense(self.att_embedding_size * self.head_num)
+        self.v_dense = Dense(self.att_embedding_size * self.head_num)
 
         if self.use_res:
-            self.res_dense = Dense(self.att_embedding_size * self.head_num, )
+            self.res_dense = Dense(self.att_embedding_size * self.head_num)
 
         super(MutiHeadSelfAttention, self).build(input_shape)
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs, mask=None, **kwargs):
+
         x = inputs
         qw = self.q_dense(x)
         kw = self.k_dense(x)
@@ -226,12 +277,32 @@ class MutiHeadSelfAttention(Layer):
         vw = K.permute_dimensions(vw, (0, 2, 1, 3))
 
         a = tf.matmul(qw, kw, transpose_b=True)
+
+        a = a / (K.int_shape(kw)[-1] ** 0.5)
+
+        """padding mask"""
+
+        if self.use_padding_masking:
+            a = sequence_masking(a, mask, '-inf', -1)
+
+        """下三角 masking ,未来信息 隔绝"""
+        if self.use_lm_masking:
+            a += lm_masking(x)
+
+        """现有数据结构内部 attention， 未来 信息为 下三角形 """
+        if self.use_unlim_masking:
+            a += unlim_masking(x)
+
         a = K.softmax(a, axis=-1)
 
         o = tf.matmul(a, vw)
 
         o = K.permute_dimensions(o, (0, 2, 1, 3))
         o = K.reshape(o, (-1, seq_len, self.head_num * self.att_embedding_size))
+
+        """再次 padding mask， 如果出现 lm_masking 与 padding mask 同时使用的话，需要在次mask,确保 不会泄密"""
+        if self.use_padding_masking:
+            o = sequence_masking(o, mask, value=0)
 
         if self.use_res:
             o += self.res_dense(x)
@@ -243,8 +314,10 @@ class MutiHeadSelfAttention(Layer):
     def get_config(self):
         config = {'att_embedding_size': self.att_embedding_size,
                   'head_num': self.head_num,
-                  'use_res': self.use_res,
-
+                  'use_padding_masking': self.use_padding_masking,
+                  'use_lm_masking': self.use_lm_masking,
+                  'use_unlim_masking': self.use_unlim_masking,
+                  'use_res': self.use_res
                   }
         base_config = super(MutiHeadSelfAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -363,7 +436,7 @@ class SequencePoolingLayer(Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-class Hash(tf.keras.layers.Layer):
+class Hash(Layer):
     """
     hash the input to [0,num_buckets)
     if mask_zero = True,0 or 0.0 will be set to 0,other value will be set in range[1,num_buckets)
@@ -393,7 +466,7 @@ class Hash(tf.keras.layers.Layer):
         except:
 
             hash_x = tf.strings.to_hash_bucket(x, num_buckets,
-                                                    name=None)  # weak hash
+                                               name=None)  # weak hash
         if self.mask_zero:
             mask = tf.cast(tf.not_equal(x, zero), dtype='int64')
             hash_x = (hash_x + 1) * mask
@@ -406,20 +479,118 @@ class Hash(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
+class PositionEmbedding(Layer):
+    """
+    针对 序列特征，如果需要引入 位置特征
+    """
+
+    def __init__(self, input_dim, merge_mode='add',
+                 embeddings_initializer='zeros', **kwargs):
+        super(PositionEmbedding, self).__init__(**kwargs)
+        self.input_dim = input_dim
+        self.merge_mode = merge_mode
+        self.embeddings_initializer = initializers.get(embeddings_initializer)
+
+    def build(self, input_shape):
+        output_dim = input_shape[-1]
+        self.embeddings = self.add_weight(name='embeddings',
+                                          shape=(self.input_dim, output_dim),
+                                          initializer=self.embeddings_initializer)
+
+        super(PositionEmbedding, self).build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        input_shape = K.shape(inputs)
+        batch_size, seq_len = input_shape[0], input_shape[1]
+        embeddings = self.embeddings[None, :seq_len]
+        return inputs + embeddings
+
+    def get_config(self):
+        config = {
+            'input_dim': self.input_dim,
+            'merge_mode': self.merge_mode,
+            'embeddings_initializer':
+                initializers.serialize(self.embeddings_initializer)
+        }
+        base_config = super(PositionEmbedding, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+class Loss(Layer):
+    """特殊的层，用来定义复杂loss
+    """
+
+    def __init__(self, output_axis=None, **kwargs):
+        super(Loss, self).__init__(**kwargs)
+        self.output_axis = output_axis
+
+    def build(self, input_shape):
+        super(Loss, self).build(input_shape)
+
+    def call(self, inputs, mask=None):
+        loss = self.compute_loss(inputs, mask)
+        self.add_loss(loss, inputs=inputs)
+        if self.output_axis is None:
+            return inputs
+        elif isinstance(self.output_axis, list):
+            return [inputs[i] for i in self.output_axis]
+        else:
+            return inputs[self.output_axis]
+
+    def compute_loss(self, inputs, mask=None):
+        raise NotImplementedError
+
+    def compute_output_shape(self, input_shape):
+        if self.output_axis is None:
+            return input_shape
+        elif isinstance(self.output_axis, list):
+            return [input_shape[i] for i in self.output_axis]
+        else:
+            return input_shape[self.output_axis]
+
+    def compute_mask(self, inputs, mask):
+        if mask is not None:
+            if self.output_axis is None:
+                return mask
+            elif isinstance(self.output_axis, list):
+                return [mask[i] for i in self.output_axis]
+            else:
+                return mask[self.output_axis]
+
+    def get_config(self):
+        config = {
+            'output_axis': self.output_axis,
+        }
+        base_config = super(Loss, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
 if __name__ == '__main__':
+    # csv = pd.read_csv('E:\data/avazu/mini_train.csv')
+    #
+    # values = list(set(csv['device_id'].values))
+    #
+    # num = 10000
+    # k = tf.constant([values])
+    #
+    # hash_value = Hash(20000, mask_zero=False)(k)
+    # data = pd.DataFrame(list(hash_value.numpy()[0])).value_counts()
+    #
+    # print(data)
+    # print(len(values), len(data))
 
-    csv = pd.read_csv('E:\data/avazu/mini_train.csv')
+    data = tf.constant([[[0, 0, 0, 0, 0, 5, 4, 1, 2, 3], [0, 0, 0, 0, 0, 0, 7, 1, 2, 3]],
+                        [[0, 0, 0, 0, 0, 0, 0, 1, 2, 3], [0, 0, 0, 0, 0, 0, 0, 0, 2, 3]]], dtype=tf.float32)
 
-    values = list(set(csv['device_id'].values))
+    data2 = tf.constant([[[0, 0, 0, 0, 0, 5, 4, 1, 2, 3], [0, 0, 0, 0, 0, 0, 7, 1, 2, 3]],
+                         [[0, 0, 0, 0, 0, 0, 0, 1, 2, 3], [0, 0, 0, 0, 0, 0, 0, 0, 2, 3]]], dtype=tf.float32)
 
-    num = 10000
-    k = tf.constant([values])
+    pos_logits = Lambda(lambda x: K.batch_dot(x[0], x[1]))([data, data2])
 
-    hash_value = Hash(20000, mask_zero=False)(k)
-    data = pd.DataFrame(list(hash_value.numpy()[0])).value_counts()
+    x = Embedding(8, 16, mask_zero=True)(data)
 
+    output = MutiHeadSelfAttention(head_num=2, use_lm_masking=True)(x)
 
-    print(data)
-    print(len(values),len(data))
+    print(output)
 
     # x = Input(shape=(6,), dtype='int32')

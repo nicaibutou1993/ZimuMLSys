@@ -123,7 +123,7 @@ class TowerTask(object):
         test_dataset = self.get_dataset(feature_columns, is_train=False)
 
         """3. 选择模型"""
-        tower_model, user_model, item_model = Tower(user_feature_colums, item_feature_colums,dnn_hidden_units=(TOWER_OUTPUT_DIM,))
+        tower_model, user_model, item_model = Tower(user_feature_columns, item_feature_columns,dnn_hidden_units=(TOWER_OUTPUT_DIM,))
         tower_model.summary()
 
         """4. 模型编译与训练"""
@@ -176,4 +176,4 @@ class TowerTask(object):
 
 
 if __name__ == '__main__':
-    TowerTask().save_item_output_vectors()
+    TowerTask().train()
