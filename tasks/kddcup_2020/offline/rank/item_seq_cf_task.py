@@ -38,7 +38,8 @@ class ItemSeqCFTask(object):
                                                  is_hist_mean_pooling=False)
                                 ]
 
-        neg_item_columns = [ConditionFeat(name='neg_items', dimension=(self.maxlen, self.neg_sample_num),embedding_name='item_id')]
+        neg_item_columns = [ConditionFeat(name='neg_items', dimension=(self.maxlen, self.neg_sample_num),embedding_name='item_id'),
+                            ConditionFeat(name='pred_items', dimension=(self.maxlen, self.neg_sample_num),embedding_name='item_id',is_pred=True)]
 
         return user_feature_colums, item_feature_columns, neg_item_columns
 
